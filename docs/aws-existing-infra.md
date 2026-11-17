@@ -42,6 +42,8 @@ Variables:
 
 INFRA_ENABLED deve permanecer ausente/false quando a infraestrutura já existe. TF_STATE_BUCKET e TF_VARS_JSON não são necessários para o deploy da aplicação nesse cenário.
 
+Um commit de integração contendo [no deploy] executa CI, mas suprime o deploy mesmo quando DEPLOY_ENABLED=true. Esse marcador permite publicar código na main sem iniciar ações na AWS; uma publicação operacional posterior pode usar workflow_dispatch com a configuração habilitada.
+
 ## Validar antes de deploy
 
 Preencha um arquivo de configuração fora do Git e execute:

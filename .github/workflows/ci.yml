@@ -71,7 +71,7 @@ jobs:
       - run: terraform -chdir=infra init -backend=false
       - run: terraform -chdir=infra validate
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true' && !contains(github.event.head_commit.message, '[no deploy]')
     needs: validate
     runs-on: ubuntu-latest
     environment: production

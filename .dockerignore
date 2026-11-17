@@ -1,6 +1,10 @@
 **/bin
 **/obj
 .git
+**/.venv
+**/.terraform
+**/.pytest_cache
+**/TestResults
 tests
 TestResults
 

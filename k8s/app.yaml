@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oficina-os
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: oficina-os }
+  template:
+    metadata:
+      labels:
+        app: oficina-os
+        tags.datadoghq.com/service: oficina-os
+        tags.datadoghq.com/env: production
+      annotations:
+        ad.datadoghq.com/api.logs: '[{"source":"csharp","service":"oficina-os"}]'
+    spec:
+      serviceAccountName: oficina-os
+      securityContext: { runAsNonRoot: true, runAsUser: 1654, fsGroup: 1654 }
+      containers:
+        - name: api
+          image: IMAGE_PLACEHOLDER
+          ports: [{ containerPort: 8080 }]
+          envFrom:
+            - secretRef: { name: oficina-os-config }
+          env:
+            - name: HOST_IP
+              valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://$(HOST_IP):4317" }
+            - { name: ASPNETCORE_ENVIRONMENT, value: Production }
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oficina-os
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oficina-os
+spec:
+  selector: { app: oficina-os }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: oficina-os
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: oficina-os }
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

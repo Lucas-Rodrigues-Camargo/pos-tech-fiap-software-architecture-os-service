@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oficina-os
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [HOST_PLACEHOLDER]
+      secretName: TLS_SECRET_PLACEHOLDER
+  rules:
+    - host: HOST_PLACEHOLDER
+      http:
+        paths:
+          - path: /internal/auth/customers
+            pathType: Exact
+            backend:
+              service:
+                name: oficina-os
+                port: { number: 80 }
+          - path: /api/orders
+            pathType: Prefix
+            backend:
+              service:
+                name: oficina-os
+                port: { number: 80 }
+          - path: /api/customers
+            pathType: Prefix
+            backend:
+              service:
+                name: oficina-os
+                port: { number: 80 }

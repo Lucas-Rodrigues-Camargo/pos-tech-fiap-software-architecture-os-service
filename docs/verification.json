@@ -1,0 +1,21 @@
+{
+  "service": "os",
+  "tests": {
+    "total": 23,
+    "executed": 23,
+    "passed": 23,
+    "failed": 0
+  },
+  "coverage": {
+    "lines": 94.01,
+    "branches": 89.09,
+    "linesCovered": 283,
+    "linesValid": 301,
+    "threshold": 80,
+    "excluded": "generated source under obj only"
+  },
+  "scope": "Local/CI tests; PostgreSQL or DynamoDB LocalStack, API host, workflow and SQS adapter",
+  "awsDeploymentVerified": false,
+  "mercadoPagoSandboxVerified": false,
+  "sonarServerVerified": false
+}

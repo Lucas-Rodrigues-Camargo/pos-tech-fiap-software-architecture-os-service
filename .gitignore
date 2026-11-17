@@ -6,4 +6,9 @@ coverage/
 *.tfstate*
 terraform.tfvars
 .env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+config/*.local.json
 

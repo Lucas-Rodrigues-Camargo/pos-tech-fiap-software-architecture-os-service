@@ -1,25 +1,120 @@
-name: Validate Orders Service
+name: CI and Kubernetes deploy
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
+  workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  build-test:
+  validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: test-only, POSTGRES_DB: testing }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 20
+      aws:
+        image: localstack/localstack:4.10
+        env: { SERVICES: 'sqs,dynamodb' }
+        ports: ['4566:4566']
+    env:
+      TEST_POSTGRES: Host=localhost;Database=testing;Username=postgres;Password=test-only
+      TEST_AWS_ENDPOINT: http://localhost:4566
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-      - run: dotnet restore tests/Tests.csproj
-      - run: dotnet build tests/Tests.csproj -c Release --no-restore
-      - run: dotnet test tests/Tests.csproj -c Release --no-build --collect:"XPlat Code Coverage"
+        with: { dotnet-version: 10.0.x }
+      - name: Begin SonarQube
+        if: env.SONAR_TOKEN != ''
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet sonarscanner begin /k:"oficina-os" /d:sonar.host.url="$SONAR_HOST_URL" /d:sonar.token="$SONAR_TOKEN" /d:sonar.cs.opencover.reportsPaths="tests/TestResults/**/coverage.opencover.xml" /d:sonar.qualitygate.wait=true
+      - run: dotnet build tests/Tests.csproj -c Release
+      - name: Wait for local AWS services
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:4566/_localstack/health >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Require SonarQube before enabling cloud deployment
+        if: vars.DEPLOY_ENABLED == 'true'
+        run: test -n "$SONAR_TOKEN" && test -n "$SONAR_HOST_URL"
+      - run: dotnet test tests/Tests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger trx
+      - run: python scripts/verify_coverage.py
+      - run: python scripts/record_evidence.py
+      - run: python -m unittest discover -s scripts -p 'test_*.py'
+      - name: Finish SonarQube quality gate
+        if: env.SONAR_TOKEN != ''
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-os
-          path: tests/TestResults/**/coverage.cobertura.xml
+          path: tests/TestResults/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-evidence-os
+          path: docs/verification.json
       - run: docker build -t oficina-os:ci .
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=infra fmt -check
+      - run: terraform -chdir=infra init -backend=false
+      - run: terraform -chdir=infra validate
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true' && !contains(github.event.head_commit.message, '[no deploy]')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs before contacting AWS
+        env:
+          SERVICE_CONFIG_JSON: ${{ secrets.SERVICE_CONFIG_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$SERVICE_CONFIG_JSON" > "$RUNNER_TEMP/service.json"
+          python3 scripts/validate_deployment.py "$RUNNER_TEMP/service.json"
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY || 'oficina-os' }}:${{ github.sha }}
+        run: |
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+      - env:
+          SERVICE_CONFIG_JSON: ${{ secrets.SERVICE_CONFIG_JSON }}
+          CLUSTER: ${{ vars.EKS_CLUSTER }}
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY || 'oficina-os' }}:${{ github.sha }}
+          INGRESS_HOST: ${{ vars.INGRESS_HOST }}
+          TLS_SECRET: ${{ vars.TLS_SECRET }}
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER"
+          kubectl create namespace oficina-phase4 --dry-run=client -o yaml | kubectl apply -f -
+          umask 077
+          printf '%s' "$SERVICE_CONFIG_JSON" > "$RUNNER_TEMP/service.json"
+          python3 scripts/validate_deployment.py "$RUNNER_TEMP/service.json"
+          jq -er 'to_entries|map("\(.key)=\(.value)")|.[]' <<< "$SERVICE_CONFIG_JSON" > "$RUNNER_TEMP/service.env"
+          kubectl -n oficina-phase4 create secret generic oficina-os-config --from-env-file="$RUNNER_TEMP/service.env" --dry-run=client -o yaml | kubectl apply -f -
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|" k8s/app.yaml | kubectl -n oficina-phase4 apply -f -
+          kubectl -n oficina-phase4 rollout status deployment/oficina-os --timeout=300s
+          if [ -n "$INGRESS_HOST" ]; then
+            test -n "$TLS_SECRET"
+            [[ "$INGRESS_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+            [[ "$TLS_SECRET" =~ ^[a-z0-9-]+$ ]]
+            sed -e "s|HOST_PLACEHOLDER|$INGRESS_HOST|g" -e "s|TLS_SECRET_PLACEHOLDER|$TLS_SECRET|g" k8s/ingress.example.yaml | kubectl -n oficina-phase4 apply -f -
+          fi
 

@@ -1,0 +1,39 @@
+name: Distributed BDD
+on:
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  bdd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Lucas-Rodrigues-Camargo/pos-tech-fiap-software-architecture-os-service
+          path: pos-tech-fiap-software-architecture-os-service
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          repository: Lucas-Rodrigues-Camargo/pos-tech-fiap-software-architecture-billing-service
+          path: pos-tech-fiap-software-architecture-billing-service
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          repository: Lucas-Rodrigues-Camargo/pos-tech-fiap-software-architecture-execution-service
+          path: pos-tech-fiap-software-architecture-execution-service
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: |
+          docker run -d --name oficina-phase4-os-db -e POSTGRES_PASSWORD=local-os-only -e POSTGRES_DB=os -p 5541:5432 postgres:16
+          docker run -d --name oficina-phase4-billing-db -e POSTGRES_PASSWORD=local-billing-only -e POSTGRES_DB=billing -p 5542:5432 postgres:16
+          docker run -d --name oficina-phase4-aws -e SERVICES=sqs,dynamodb -p 4566:4566 localstack/localstack:4.10
+          for service in os billing execution; do dotnet build "pos-tech-fiap-software-architecture-$service-service/src" -c Release; done
+          pip install -r pos-tech-fiap-software-architecture-os-service/e2e/requirements.txt
+          python -m pytest pos-tech-fiap-software-architecture-os-service/e2e -v --junitxml=bdd-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bdd-results
+          path: bdd-results.xml

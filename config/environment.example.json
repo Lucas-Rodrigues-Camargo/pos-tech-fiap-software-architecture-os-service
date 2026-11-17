@@ -1,0 +1,10 @@
+{
+  "Jwt__Key": "REPLACE_WITH_SAME_32_BYTE_SECRET_AS_AUTH_LAMBDA",
+  "Internal__Key": "REPLACE_WITH_32_BYTE_INTERNAL_SECRET",
+  "AWS__Region": "us-east-1",
+  "Messaging__InputQueue": "https://sqs.us-east-1.amazonaws.com/ACCOUNT/oficina-os",
+  "Messaging__Queues__os": "https://sqs.us-east-1.amazonaws.com/ACCOUNT/oficina-os",
+  "Messaging__Queues__billing": "https://sqs.us-east-1.amazonaws.com/ACCOUNT/oficina-billing",
+  "Messaging__Queues__execution": "https://sqs.us-east-1.amazonaws.com/ACCOUNT/oficina-execution",
+  "ConnectionStrings__Database": "Host=RDS_HOST;Database=os;Username=oficina_admin;Password=REPLACE;SSL Mode=VerifyFull;Root Certificate=/app/rds-ca.pem"
+}

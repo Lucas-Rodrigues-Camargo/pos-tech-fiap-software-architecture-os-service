@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oficina.example/contracts/message-v1.schema.json",
+  "title": "Oficina message envelope v1",
+  "type": "object",
+  "required": [
+    "id",
+    "orderId",
+    "type",
+    "destination",
+    "correlationId",
+    "data",
+    "version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "orderId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "type": {
+      "enum": [
+        "OpenOrder",
+        "CreateJob",
+        "CompleteDiagnosis",
+        "DiagnosisCompleted",
+        "GenerateBudget",
+        "BudgetGenerated",
+        "DecideBudget",
+        "BudgetApproved",
+        "BudgetRejected",
+        "CreateCheckout",
+        "VerifyPayment",
+        "PaymentConfirmed",
+        "AuthorizeRepair",
+        "RepairQueued",
+        "StartRepair",
+        "RepairStarted",
+        "FinishRepair",
+        "RepairFinished",
+        "CancelOrder",
+        "CancelJob",
+        "JobCanceled",
+        "CancelBudget",
+        "RefundPayment",
+        "BudgetCanceled",
+        "CompensationFailed"
+      ]
+    },
+    "destination": {
+      "enum": [
+        "os",
+        "billing",
+        "execution"
+      ]
+    },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "const": 1
+    },
+    "traceParent": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpf": {
+          "type": "string"
+        },
+        "plate": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "multipleOf": 0.01
+        },
+        "paymentId": {
+          "type": "string"
+        },
+        "diagnosis": {
+          "type": "string"
+        },
+        "checkoutUrl": {
+          "type": "string"
+        },
+        "approved": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

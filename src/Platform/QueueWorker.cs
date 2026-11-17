@@ -21,6 +21,8 @@ public sealed class QueueWorker(IServiceProvider services, IAmazonSQS sqs, IConf
                     try
                     {
                         var message = JsonSerializer.Deserialize<Message>(record.Body, JsonDefaults.Options)!;
+                        if (message == null || message.Destination != config["Service:Name"])
+                            throw new ArgumentException("Message destination does not match this service.");
                         await services.GetRequiredService<Processor>().Handle(message, stoppingToken);
                         await sqs.DeleteMessageAsync(input, record.ReceiptHandle, stoppingToken);
                     }

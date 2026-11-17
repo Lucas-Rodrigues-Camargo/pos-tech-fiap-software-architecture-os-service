@@ -3,6 +3,15 @@ public sealed class ServiceWorkflow : IWorkflow
 {
     public Task Apply(State s, Message m, CancellationToken ct)
     {
+        // Late forward events cannot restart work after compensation has begun.
+        if (s.Status is "CompensationPending" or "Canceled" or "ManualIntervention"
+            && m.Type is "DiagnosisCompleted" or "BudgetGenerated" or "BudgetApproved" or "PaymentConfirmed" or "BudgetRejected" or "RepairQueued")
+            return Task.CompletedTask;
+        if (s.Status == "CompensationPending" && m.Type == "RepairStarted")
+        {
+            s.Move("ManualIntervention");
+            return Task.CompletedTask;
+        }
         switch (m.Type)
         {
             case "OpenOrder":
@@ -18,8 +27,9 @@ public sealed class ServiceWorkflow : IWorkflow
             case "BudgetGenerated": s.Require("GeneratingBudget"); s.Move("WaitingApproval"); break;
             case "BudgetApproved": s.Require("WaitingApproval"); s.Move("WaitingPayment"); break;
             case "PaymentConfirmed":
-                s.Require("WaitingPayment"); s.Move("ReadyForExecution"); s.Emit(m, "StartRepair", "execution");
+                s.Require("WaitingPayment"); s.Move("ReadyForExecution"); s.Emit(m, "AuthorizeRepair", "execution");
                 break;
+            case "RepairQueued": s.Require("ReadyForExecution"); break;
             case "RepairStarted": s.Require("ReadyForExecution"); s.Move("InExecution"); break;
             case "RepairFinished": s.Require("InExecution"); s.Move("Finished"); break;
             case "CancelOrder":
@@ -44,9 +54,9 @@ public sealed class ServiceWorkflow : IWorkflow
 }
 public static class Cpf
 {
-    public static bool IsValid(string value)
+    public static bool IsValid(string? value)
     {
-        if (value.Length != 11 || value.Any(c => !char.IsAsciiDigit(c)) || value.Distinct().Count() == 1) return false;
+        if (string.IsNullOrEmpty(value) || value.Length != 11 || value.Any(c => !char.IsAsciiDigit(c)) || value.Distinct().Count() == 1) return false;
         for (var length = 9; length <= 10; length++)
         {
             var sum = Enumerable.Range(0, length).Sum(i => (value[i]-'0') * (length+1-i));

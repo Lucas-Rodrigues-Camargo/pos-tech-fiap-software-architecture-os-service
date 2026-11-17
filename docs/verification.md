@@ -1,15 +1,20 @@
-# Evidências locais — Fase 4
+# Evidências verificadas — os
 
-Verificação em 17/11/2026:
+Gerado por scripts/record_evidence.py a partir do último TRX aprovado e do relatório Cobertura.
 
-- 23 testes .NET aprovados; cobertura mínima de 80% aplicada por scripts/verify_coverage.py.
-- Cobertura atual: 94,25% (o relatório gerado no teste é a fonte de verdade).
-- Testes de storage: PostgreSQL em container e DynamoDB no LocalStack.
-- Imagem oficina-os:phase4 construída com sucesso em Linux/Docker.
-- terraform validate aprovado.
-- BDD integrado: 2 cenários aprovados, com três hosts HTTP, bancos isolados e SQS/DynamoDB LocalStack.
-- Mercado Pago simulado por servidor HTTP nos testes; sandbox externo ainda precisa das credenciais do grupo.
+| Medida | Resultado |
+|---|---:|
+| Testes executados | 23 |
+| Testes aprovados | 23 |
+| Testes falhos | 0 |
+| Cobertura de linhas | 94.01% |
+| Cobertura de branches | 89.09% |
+| Mínimo de linhas exigido no CI | 80% |
 
-Para reproduzir, siga README e coverage.runsettings. Código gerado pelo OpenAPI em obj é excluído da cobertura; código de negócio e adaptadores permanecem incluídos. A execução dos testes de Execution foi feita em Linux/Docker devido ao bloqueio local da DLL de testes pela política de aplicativos do Windows.
+Código gerado em obj é excluído; código de negócio, APIs e adaptadores utilizados são incluídos. Classes de bootstrap sem uso foram removidas; os testes exercitam o workflow real.
 
-Artefatos completos são publicados pelo workflow CI no GitHub Actions após execução. Estas evidências locais não comprovam deploy AWS, processamento real de pagamentos ou análise SonarQube externa.
+Os testes de persistência usam somente o banco correspondente ao serviço: PostgreSQL em container ou DynamoDB no LocalStack. APIs, autorização, idempotência, fila e Saga são exercitados conforme a matriz dos requisitos. O BDD integrado possui três cenários (sucesso, rejeição e cancelamento pago com estorno).
+
+Os resultados locais podem ser obtidos em Linux/Docker quando a política de aplicativos do Windows bloquear DLLs de teste. O CI usa Linux. Artefatos TRX/Cobertura/OpenCover são publicados pelo GitHub Actions.
+
+Esses resultados não comprovam deploy AWS, aprovação de SonarQube externo ou operação real de Mercado Pago sandbox. Nenhum recurso AWS é criado pelo script de evidências.

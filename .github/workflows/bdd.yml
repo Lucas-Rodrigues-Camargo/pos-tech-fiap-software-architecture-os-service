@@ -1,6 +1,16 @@
 name: Distributed BDD
 on:
   workflow_dispatch:
+    inputs:
+      os_ref:
+        description: 'OS branch/tag/SHA; empty uses the selected workflow ref'
+        default: ''
+      billing_ref:
+        description: 'Billing branch/tag/SHA'
+        default: 'main'
+      execution_ref:
+        description: 'Execution branch/tag/SHA'
+        default: 'main'
 permissions: { contents: read }
 jobs:
   bdd:
@@ -9,16 +19,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lucas-Rodrigues-Camargo/pos-tech-fiap-software-architecture-os-service
+          ref: ${{ inputs.os_ref || github.ref }}
           path: pos-tech-fiap-software-architecture-os-service
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
       - uses: actions/checkout@v4
         with:
           repository: Lucas-Rodrigues-Camargo/pos-tech-fiap-software-architecture-billing-service
+          ref: ${{ inputs.billing_ref }}
           path: pos-tech-fiap-software-architecture-billing-service
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
       - uses: actions/checkout@v4
         with:
           repository: Lucas-Rodrigues-Camargo/pos-tech-fiap-software-architecture-execution-service
+          ref: ${{ inputs.execution_ref }}
           path: pos-tech-fiap-software-architecture-execution-service
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
       - uses: actions/setup-dotnet@v4
@@ -26,6 +39,10 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
       - run: |
+          for service in os billing execution; do
+            git -C "pos-tech-fiap-software-architecture-$service-service" rev-parse HEAD >> bdd-revisions.txt
+          done
+          python -c "from pathlib import Path; import hashlib; files=list(Path('.').glob('*-service/contracts/message-v1.schema.json')); assert len(files)==3 and len({hashlib.sha256(p.read_bytes()).hexdigest() for p in files})==1, 'Message contract mismatch'"
           docker run -d --name oficina-phase4-os-db -e POSTGRES_PASSWORD=local-os-only -e POSTGRES_DB=os -p 5541:5432 postgres:16
           docker run -d --name oficina-phase4-billing-db -e POSTGRES_PASSWORD=local-billing-only -e POSTGRES_DB=billing -p 5542:5432 postgres:16
           docker run -d --name oficina-phase4-aws -e SERVICES=sqs,dynamodb -p 4566:4566 localstack/localstack:4.10
@@ -36,4 +53,6 @@ jobs:
         if: always()
         with:
           name: bdd-results
-          path: bdd-results.xml
+          path: |
+            bdd-results.xml
+            bdd-revisions.txt

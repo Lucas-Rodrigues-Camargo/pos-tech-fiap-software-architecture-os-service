@@ -10,5 +10,8 @@
 <Using Include="Xunit" />
 <ProjectReference Include="../src/Orders.csproj" />
 </ItemGroup>
+  <ItemGroup>
+    <Content Include="../contracts/message-v1.schema.json" Link="message-v1.schema.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
 

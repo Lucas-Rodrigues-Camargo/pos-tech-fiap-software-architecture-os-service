@@ -1,16 +1,18 @@
 name: Provision infrastructure
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['infra/**', '.github/workflows/infra.yml']
+    inputs:
+      confirm_apply:
+        description: 'Optional provisioning of NEW resources; not needed with existing infrastructure'
+        type: boolean
+        default: false
 permissions: { contents: read, id-token: write }
 concurrency:
   group: terraform-os
   cancel-in-progress: false
 jobs:
   terraform:
-    if: vars.INFRA_ENABLED == 'true'
+    if: vars.INFRA_ENABLED == 'true' && inputs.confirm_apply
     runs-on: ubuntu-latest
     environment: production
     steps:

@@ -53,7 +53,9 @@ sequenceDiagram
   M-->>B: Webhook HMAC
   B->>M: Consultar pagamento
   B-->>OS: PaymentConfirmed
-  OS-->>E: StartRepair
+  OS-->>E: AuthorizeRepair
+  E-->>OS: RepairQueued
+  E->>E: Funcionário inicia /start
   E-->>OS: RepairStarted
   E->>E: Finalizar reparo
   E-->>OS: RepairFinished
@@ -61,7 +63,7 @@ sequenceDiagram
 
 ## Saga e consistência
 
-Estado, inbox, outbox e histórico são persistidos atomicamente por agregado. PostgreSQL usa jsonb e compare-and-swap por versão; DynamoDB usa PutItem condicional. A API só confirma o comando depois da persistência. O dispatcher envia antes de retirar da outbox; falha no save permite duplicata, deduplicada pela inbox.
+Estado, inbox, outbox e histórico são persistidos atomicamente por agregado. PostgreSQL usa jsonb e compare-and-swap por versão; DynamoDB usa PutItem condicional. Cada serviço contém apenas o adaptador do banco que realmente utiliza. A API só confirma o comando depois da persistência. O fingerprint da inbox rejeita reutilização da chave com dados diferentes; causationId preserva a origem de cada evento. O dispatcher envia antes de retirar da outbox; falha no save permite duplicata, deduplicada pela inbox.
 
 O cancelamento compensa execução antes de cobrança, evitando estorno de trabalho físico que não pode ser cancelado. Se o trabalho já começou, o estado é ManualIntervention. Billing persiste RefundPending antes de chamar o provedor. RefundPayment retenta com X-Idempotency-Key; falha nunca confirma cancelamento. Após JobCanceled e BudgetCanceled, a OS fica Canceled. Timeouts das etapas anteriores ao reparo iniciam compensação; DLQ retém falhas repetidas.
 
@@ -77,26 +79,27 @@ Logs JSON propagam correlationId e orderId. OpenTelemetry instrumenta HTTP e pro
 
 ## Testes e evidências
 
-Os testes incluem APIs HTTP in-process, autorização e propriedade, workflow, timeout, retries de estorno, idempotência, PostgreSQL real em container, DynamoDB via LocalStack e consumidores/publicação SQS. O gate de linhas exige 80%; apenas código gerado em obj é excluído.
+Os testes incluem APIs HTTP in-process, autorização e propriedade, workflow, timeout, retries de estorno, idempotência com fingerprint, eventos tardios, PostgreSQL real em container, DynamoDB via LocalStack e consumidores/publicação SQS. As evidências numéricas são geradas em docs/verification.json a partir de TRX e Cobertura. O gate de linhas exige 80%; apenas código gerado em obj é excluído.
 
-BDD Gherkin com pytest-bdd executa três hosts separados e bancos/filas reais de teste: sucesso com pagamento e rejeição com compensação. Apenas Mercado Pago é um simulador HTTP local. Há workflow manual Distributed BDD no OS Service, com checkout dos três serviços. Para repositórios privados, configurar CROSS_REPO_READ_TOKEN.
+BDD Gherkin com pytest-bdd executa três hosts separados e bancos/filas reais de teste: sucesso com pagamento, rejeição com compensação e cancelamento pago com estorno confirmado. Apenas Mercado Pago é um simulador HTTP local. Há workflow manual Distributed BDD no OS Service, com checkout dos três serviços. Para repositórios privados, configurar CROSS_REPO_READ_TOKEN.
 
-## Implantação
+## Implantação sobre infraestrutura existente
 
-1. Provisionar EKS/VPC/Datadog existentes.
-2. Criar backend S3 versionado e configurar roles OIDC de deploy.
-3. Em cada serviço, configurar TF_STATE_BUCKET e TF_VARS_JSON; ativar INFRA_ENABLED e executar Provision infrastructure.
-4. Preencher SERVICE_CONFIG_JSON com outputs e segredos reais. PostgreSQL usa senha do Secrets Manager e TLS.
-5. Configurar EKS_CLUSTER, SONAR_HOST_URL e SONAR_TOKEN; ativar DEPLOY_ENABLED. Merge na main publica imagem e faz rollout.
-6. Configurar Ingress/TLS público e Mercado Pago sandbox; validar webhook real.
-7. Configurar Lambda CUSTOMER_API_URL, INTERNAL_API_KEY e JWT_KEY coerentes com OS.
-8. Ativar proteção main/PR e checks nos três repositórios; convidar avaliadores conforme a entrega.
+O caminho padrão usa cluster, bancos, filas, ECR e identidades já existentes. Não é necessário executar Terraform apply. Cada serviço documenta o contrato em docs/aws-existing-infra.md e valida SERVICE_CONFIG_JSON localmente antes de qualquer acesso de deploy à AWS.
 
-O deploy fica desativado até configuração explícita. Sonar externo é omitido sem token; deve ser configurado para a entrega. O ambiente cloud e a conta Mercado Pago não foram validados com credenciais reais nesta implementação.
+1. Conferir o contrato de recursos, acesso de rede e Pod Identity/RBAC.
+2. Configurar SERVICE_CONFIG_JSON, AWS_DEPLOY_ROLE_ARN, EKS_CLUSTER, ECR_REPOSITORY e região.
+3. Configurar SonarQube e ativar DEPLOY_ENABLED quando o ambiente estiver pronto.
+4. O merge na main valida testes, cobertura, configuração e quality gate; publica imagem imutável e aguarda rollout.
+5. INGRESS_HOST/TLS_SECRET permitem aplicar o Ingress ao controller existente.
+6. Configurar Lambda com CUSTOMER_API_URL, INTERNAL_API_KEY e JWT_KEY coerentes com o OS.
+7. Validar Mercado Pago sandbox e observabilidade no ambiente do grupo; configurar proteção de main e PRs.
+
+O Terraform é uma referência opcional para reproduzir a infraestrutura. Nos serviços, o workflow de provisionamento não roda em push e exige confirmação manual explícita. A implementação foi validada localmente, não como deploy ativo nem como pagamento sandbox externo.
 
 ## Itens que dependem do grupo
 
-Credenciais/recursos AWS, segredos Mercado Pago sandbox, SonarQube/Datadog, DNS/TLS, política de branch no GitHub, identificação dos participantes e gravação/publicação do vídeo até 15 minutos. O PDF de arquitetura gerado é documentação técnica; a entrega final precisa dessas evidências reais.
+Configuração da infraestrutura AWS existente, segredos Mercado Pago sandbox, SonarQube/Datadog, DNS/TLS, política de branch no GitHub, identificação dos participantes e gravação/publicação do vídeo até 15 minutos. O PDF de arquitetura gerado é documentação técnica; a entrega final precisa dessas evidências reais.
 
 ## Decisões
 
